@@ -5,12 +5,12 @@
 }
 
 body {
-    font-family: Arial, sans-serif;
+    font-family: 'Comic Sans MS', 'Arial', sans-serif;
     display: flex;
     justify-content: center;
     align-items: center;
     min-height: 100vh;
-    background: linear-gradient(to bottom, #87CEEB 0%, #F4A460 100%);
+    background: linear-gradient(to bottom, #FFB6C1 0%, #87CEEB 50%, #98D8C8 100%);
 }
 
 .game-container {
@@ -21,8 +21,10 @@ body {
 
 #gameCanvas {
     display: block;
-    border: 3px solid #333;
-    background: linear-gradient(to bottom, #87CEEB 0%, #87CEEB 70%, #F4A460 70%, #F4A460 100%);
+    border: 5px solid #FF69B4;
+    border-radius: 10px;
+    background: linear-gradient(to bottom, #87CEEB 0%, #87CEEB 70%, #98D8C8 70%, #98D8C8 100%);
+    box-shadow: 0 0 20px rgba(255, 105, 180, 0.5);
 }
 
 #score-display {
@@ -59,6 +61,8 @@ body {
     font-size: 48px;
     margin-bottom: 20px;
     text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.8);
+    color: #FFD700;
+    font-family: 'Comic Sans MS', 'Arial', sans-serif;
 }
 
 .overlay p {
@@ -73,16 +77,19 @@ button {
     font-size: 20px;
     font-weight: bold;
     color: white;
-    background: #4CAF50;
-    border: none;
-    border-radius: 5px;
+    background: linear-gradient(135deg, #FF69B4, #FFB6C1);
+    border: 3px solid #FF1493;
+    border-radius: 25px;
     cursor: pointer;
-    transition: background 0.3s, transform 0.1s;
+    transition: all 0.3s;
+    box-shadow: 0 4px 15px rgba(255, 105, 180, 0.4);
+    font-family: 'Comic Sans MS', 'Arial', sans-serif;
 }
 
 button:hover {
-    background: #45a049;
-    transform: scale(1.05);
+    background: linear-gradient(135deg, #FFB6C1, #FF69B4);
+    transform: scale(1.1) rotate(-2deg);
+    box-shadow: 0 6px 20px rgba(255, 105, 180, 0.6);
 }
 
 button:active {

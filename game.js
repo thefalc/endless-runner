@@ -8,9 +8,16 @@ const CONFIG = {
         width: 40,
         height: 60,
         x: 100,
-        color: '#FF4444',
+        color: '#FFB6C1',
         eyeColor: 'white',
         duckHeight: 30
+    },
+    apple: {
+        width: 25,
+        height: 25,
+        points: 100,
+        spawnChance: 0.3,
+        yPositions: [220, 180, 250]
     },
     obstacle: {
         wall: {
@@ -47,13 +54,17 @@ const restartButton = document.getElementById('restart-button');
 
 let gameState = 'start';
 let score = 0;
+let bonusScore = 0;
 let gameStartTime = 0;
 let lastObstacleTime = 0;
 let currentSpeed = CONFIG.obstacle.speed;
 let obstacles = [];
+let apples = [];
+let floatingTexts = [];
 let keys = {};
 let clouds = [];
 let animationFrame = 0;
+let particles = [];
 
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 let backgroundMusic = null;
@@ -65,14 +76,15 @@ function playJumpSound() {
     oscillator.connect(gainNode);
     gainNode.connect(audioContext.destination);
 
-    oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
-    oscillator.frequency.exponentialRampToValueAtTime(600, audioContext.currentTime + 0.1);
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(600, audioContext.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(900, audioContext.currentTime + 0.08);
 
-    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
+    gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.12);
 
     oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + 0.15);
+    oscillator.stop(audioContext.currentTime + 0.12);
 }
 
 function playDuckSound() {
@@ -82,14 +94,42 @@ function playDuckSound() {
     oscillator.connect(gainNode);
     gainNode.connect(audioContext.destination);
 
-    oscillator.frequency.setValueAtTime(300, audioContext.currentTime);
-    oscillator.frequency.exponentialRampToValueAtTime(150, audioContext.currentTime + 0.1);
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(250, audioContext.currentTime + 0.08);
 
-    gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+    gainNode.gain.setValueAtTime(0.15, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.08);
 
     oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + 0.1);
+    oscillator.stop(audioContext.currentTime + 0.08);
+}
+
+function playCollectSound() {
+    const oscillator1 = audioContext.createOscillator();
+    const oscillator2 = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+
+    oscillator1.connect(gainNode);
+    oscillator2.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    oscillator1.type = 'sine';
+    oscillator2.type = 'sine';
+
+    oscillator1.frequency.setValueAtTime(800, audioContext.currentTime);
+    oscillator1.frequency.exponentialRampToValueAtTime(1200, audioContext.currentTime + 0.1);
+
+    oscillator2.frequency.setValueAtTime(1000, audioContext.currentTime);
+    oscillator2.frequency.exponentialRampToValueAtTime(1400, audioContext.currentTime + 0.1);
+
+    gainNode.gain.setValueAtTime(0.25, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
+
+    oscillator1.start(audioContext.currentTime);
+    oscillator2.start(audioContext.currentTime);
+    oscillator1.stop(audioContext.currentTime + 0.15);
+    oscillator2.stop(audioContext.currentTime + 0.15);
 }
 
 function playGameOverSound() {
@@ -135,8 +175,8 @@ function startBackgroundMusic() {
 function playMelody() {
     if (gameState !== 'playing') return;
 
-    const notes = [262, 294, 330, 349, 392, 349, 330, 294];
-    const noteDuration = 0.3;
+    const notes = [523, 587, 659, 698, 784, 698, 659, 587];
+    const noteDuration = 0.25;
     let currentNote = 0;
 
     function playNextNote() {
@@ -185,6 +225,122 @@ class Cloud {
         ctx.arc(this.x + this.width / 3, this.y - this.height / 4, this.height / 2.5, 0, Math.PI * 2);
         ctx.arc(this.x + this.width / 1.5, this.y, this.height / 2.2, 0, Math.PI * 2);
         ctx.fill();
+    }
+}
+
+class Apple {
+    constructor() {
+        this.width = CONFIG.apple.width;
+        this.height = CONFIG.apple.height;
+        this.x = CONFIG.canvas.width;
+        this.y = CONFIG.apple.yPositions[Math.floor(Math.random() * CONFIG.apple.yPositions.length)];
+        this.bounce = 0;
+    }
+
+    update() {
+        this.x -= currentSpeed;
+        this.bounce += 0.1;
+    }
+
+    draw() {
+        const bounceY = Math.sin(this.bounce) * 3;
+
+        ctx.fillStyle = '#FF3333';
+        ctx.beginPath();
+        ctx.arc(this.x + this.width / 2, this.y + bounceY, this.width / 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#CC0000';
+        ctx.beginPath();
+        ctx.arc(this.x + this.width / 2 + 3, this.y + bounceY + 3, this.width / 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#228B22';
+        ctx.beginPath();
+        ctx.ellipse(this.x + this.width / 2, this.y + bounceY - this.height / 2, 4, 8, -0.3, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = '#FFD700';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(this.x + this.width / 2 - 4, this.y + bounceY - 4, 3, 0.5, 2);
+        ctx.stroke();
+    }
+
+    getBounds() {
+        return {
+            left: this.x,
+            right: this.x + this.width,
+            top: this.y - this.height / 2,
+            bottom: this.y + this.height / 2
+        };
+    }
+
+    isOffScreen() {
+        return this.x + this.width < 0;
+    }
+}
+
+class Particle {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.vx = (Math.random() - 0.5) * 4;
+        this.vy = (Math.random() - 0.5) * 4 - 2;
+        this.life = 1.0;
+        this.color = ['#FFD700', '#FFA500', '#FF69B4', '#87CEEB'][Math.floor(Math.random() * 4)];
+        this.size = 3 + Math.random() * 3;
+    }
+
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.vy += 0.15;
+        this.life -= 0.02;
+    }
+
+    draw() {
+        ctx.fillStyle = this.color;
+        ctx.globalAlpha = this.life;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+    }
+
+    isDead() {
+        return this.life <= 0;
+    }
+}
+
+class FloatingText {
+    constructor(x, y, text) {
+        this.x = x;
+        this.y = y;
+        this.text = text;
+        this.life = 1.0;
+        this.vy = -1.5;
+    }
+
+    update() {
+        this.y += this.vy;
+        this.life -= 0.015;
+    }
+
+    draw() {
+        ctx.save();
+        ctx.globalAlpha = this.life;
+        ctx.font = 'bold 24px Arial';
+        ctx.fillStyle = '#FFD700';
+        ctx.strokeStyle = '#FF4500';
+        ctx.lineWidth = 3;
+        ctx.strokeText(this.text, this.x, this.y);
+        ctx.fillText(this.text, this.x, this.y);
+        ctx.restore();
+    }
+
+    isDead() {
+        return this.life <= 0;
     }
 }
 
@@ -237,58 +393,105 @@ const player = {
 
     draw() {
         const legOffset = Math.sin(animationFrame * 0.2) * 3;
+        const blinkPhase = animationFrame % 120;
 
         if (this.isDucking) {
             ctx.fillStyle = CONFIG.player.color;
-            ctx.fillRect(this.x, this.y, this.width, this.height);
+            ctx.beginPath();
+            ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, 0, Math.PI * 2);
+            ctx.fill();
 
             ctx.fillStyle = CONFIG.player.eyeColor;
-            ctx.fillRect(this.x + 10, this.y + 8, 8, 8);
-            ctx.fillRect(this.x + 22, this.y + 8, 8, 8);
+            ctx.beginPath();
+            if (blinkPhase > 115) {
+                ctx.fillRect(this.x + 10, this.y + 12, 8, 2);
+                ctx.fillRect(this.x + 22, this.y + 12, 8, 2);
+            } else {
+                ctx.arc(this.x + 14, this.y + 12, 4, 0, Math.PI * 2);
+                ctx.arc(this.x + 26, this.y + 12, 4, 0, Math.PI * 2);
+                ctx.fill();
 
-            ctx.fillStyle = '#FFD700';
-            ctx.fillRect(this.x + 15, this.y - 8, 12, 8);
+                ctx.fillStyle = '#333';
+                ctx.beginPath();
+                ctx.arc(this.x + 15, this.y + 12, 2, 0, Math.PI * 2);
+                ctx.arc(this.x + 27, this.y + 12, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.fillStyle = '#FF1493';
+            ctx.beginPath();
+            ctx.arc(this.x + 8, this.y + 16, 3, 0, Math.PI * 2);
+            ctx.arc(this.x + 32, this.y + 16, 3, 0, Math.PI * 2);
+            ctx.fill();
         } else {
             ctx.fillStyle = CONFIG.player.color;
             ctx.beginPath();
-            ctx.roundRect(this.x, this.y, this.width, this.height * 0.4, 5);
+            ctx.arc(this.x + this.width / 2, this.y + 15, 15, 0, Math.PI * 2);
             ctx.fill();
 
-            ctx.fillStyle = '#FF6666';
+            ctx.fillStyle = '#FFD1DC';
             ctx.beginPath();
-            ctx.roundRect(this.x, this.y + this.height * 0.4, this.width, this.height * 0.6, 5);
+            ctx.arc(this.x + this.width / 2, this.y + 35, 14, 0, Math.PI * 2);
             ctx.fill();
 
             ctx.fillStyle = CONFIG.player.eyeColor;
             ctx.beginPath();
-            ctx.arc(this.x + 12, this.y + 12, 4, 0, Math.PI * 2);
-            ctx.arc(this.x + 28, this.y + 12, 4, 0, Math.PI * 2);
-            ctx.fill();
+            if (blinkPhase > 115) {
+                ctx.fillRect(this.x + 12, this.y + 12, 6, 2);
+                ctx.fillRect(this.x + 22, this.y + 12, 6, 2);
+            } else {
+                ctx.arc(this.x + 15, this.y + 12, 5, 0, Math.PI * 2);
+                ctx.arc(this.x + 25, this.y + 12, 5, 0, Math.PI * 2);
+                ctx.fill();
 
-            ctx.fillStyle = '#333';
+                ctx.fillStyle = '#333';
+                ctx.beginPath();
+                ctx.arc(this.x + 16, this.y + 12, 3, 0, Math.PI * 2);
+                ctx.arc(this.x + 26, this.y + 12, 3, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(this.x + 17, this.y + 11, 1.5, 0, Math.PI * 2);
+                ctx.arc(this.x + 27, this.y + 11, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.fillStyle = '#FF69B4';
             ctx.beginPath();
-            ctx.arc(this.x + 13, this.y + 12, 2, 0, Math.PI * 2);
-            ctx.arc(this.x + 29, this.y + 12, 2, 0, Math.PI * 2);
+            ctx.arc(this.x + 8, this.y + 16, 4, 0, Math.PI * 2);
+            ctx.arc(this.x + 32, this.y + 16, 4, 0, Math.PI * 2);
             ctx.fill();
 
-            ctx.strokeStyle = '#333';
+            ctx.strokeStyle = '#FF1493';
             ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.arc(this.x + 20, this.y + 20, 5, 0, Math.PI);
+            ctx.arc(this.x + 20, this.y + 20, 6, 0.2, Math.PI - 0.2);
             ctx.stroke();
 
             ctx.fillStyle = '#FFD700';
-            ctx.fillRect(this.x + 8, this.y - 12, 24, 12);
-            ctx.fillRect(this.x + 12, this.y - 18, 16, 6);
+            ctx.beginPath();
+            ctx.moveTo(this.x + 20, this.y - 2);
+            ctx.lineTo(this.x + 14, this.y + 4);
+            ctx.lineTo(this.x + 26, this.y + 4);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = '#FFA500';
+            ctx.beginPath();
+            ctx.arc(this.x + 20, this.y - 2, 3, 0, Math.PI * 2);
+            ctx.fill();
 
             if (!this.isJumping) {
-                ctx.fillStyle = '#8B4513';
-                ctx.fillRect(this.x + 8, this.y + this.height, 10, 8 + legOffset);
-                ctx.fillRect(this.x + 22, this.y + this.height, 10, 8 - legOffset);
+                ctx.fillStyle = '#FFB6C1';
+                ctx.beginPath();
+                ctx.arc(this.x + 13, this.y + 55 + legOffset, 6, 0, Math.PI * 2);
+                ctx.arc(this.x + 27, this.y + 55 - legOffset, 6, 0, Math.PI * 2);
+                ctx.fill();
 
-                ctx.fillStyle = '#654321';
-                ctx.fillRect(this.x + 8, this.y + this.height + 8 + legOffset, 10, 4);
-                ctx.fillRect(this.x + 22, this.y + this.height + 8 - legOffset, 10, 4);
+                ctx.fillStyle = '#FF69B4';
+                ctx.fillRect(this.x + 11, this.y + 48, 5, 8 + legOffset);
+                ctx.fillRect(this.x + 24, this.y + 48, 5, 8 - legOffset);
             }
         }
     },
@@ -338,77 +541,91 @@ class Obstacle {
 
     draw() {
         if (this.type === 'wall') {
-            ctx.fillStyle = '#8B4513';
-            ctx.fillRect(this.x, this.y, this.width, this.height);
+            ctx.fillStyle = '#DEB887';
+            ctx.strokeStyle = '#8B7355';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.roundRect(this.x, this.y, this.width, this.height, 5);
+            ctx.fill();
+            ctx.stroke();
 
-            ctx.strokeStyle = '#654321';
+            ctx.fillStyle = '#333';
+            ctx.beginPath();
+            ctx.arc(this.x + 10, this.y + 20, 2, 0, Math.PI * 2);
+            ctx.arc(this.x + 20, this.y + 20, 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = '#333';
             ctx.lineWidth = 2;
-            for (let i = 0; i < 3; i++) {
-                ctx.beginPath();
-                ctx.moveTo(this.x, this.y + (i + 1) * 15);
-                ctx.lineTo(this.x + this.width, this.y + (i + 1) * 15);
-                ctx.stroke();
-            }
+            ctx.beginPath();
+            ctx.arc(this.x + 15, this.y + 30, 4, 0.2, Math.PI - 0.2);
+            ctx.stroke();
 
             ctx.fillStyle = '#A0522D';
-            ctx.fillRect(this.x + 5, this.y + 5, this.width - 10, 8);
-            ctx.fillRect(this.x + 5, this.y + 25, this.width - 10, 8);
-            ctx.fillRect(this.x + 5, this.y + 45, this.width - 10, 8);
+            for (let i = 0; i < 3; i++) {
+                ctx.fillRect(this.x + 5, this.y + 45 + i * 3, this.width - 10, 2);
+            }
         } else {
             const propellerAngle = (animationFrame * 0.5) % (Math.PI * 2);
+            const bobble = Math.sin(animationFrame * 0.1) * 2;
 
-            ctx.fillStyle = '#555';
+            ctx.fillStyle = '#9B59B6';
+            ctx.strokeStyle = '#7D3C98';
+            ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.ellipse(this.x + this.width / 2, this.y + this.height / 2, this.width / 2, this.height / 2, 0, 0, Math.PI * 2);
+            ctx.ellipse(this.x + this.width / 2, this.y + this.height / 2 + bobble, this.width / 2 - 2, this.height / 2 - 2, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(this.x + 18, this.y + this.height / 2 + bobble - 3, 4, 0, Math.PI * 2);
+            ctx.arc(this.x + this.width - 18, this.y + this.height / 2 + bobble - 3, 4, 0, Math.PI * 2);
             ctx.fill();
 
             ctx.fillStyle = '#333';
-            ctx.fillRect(this.x + this.width / 2 - 3, this.y + this.height / 2 - 3, 6, 6);
-
-            ctx.strokeStyle = '#FF4444';
-            ctx.lineWidth = 1;
             ctx.beginPath();
-            ctx.arc(this.x + 12, this.y + this.height / 2, 3, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.arc(this.x + this.width - 12, this.y + this.height / 2, 3, 0, Math.PI * 2);
-            ctx.stroke();
-
-            ctx.strokeStyle = '#777';
-            ctx.lineWidth = 2;
-
-            ctx.save();
-            ctx.translate(this.x + 12, this.y - 5);
-            ctx.rotate(propellerAngle);
-            ctx.beginPath();
-            ctx.moveTo(-8, 0);
-            ctx.lineTo(8, 0);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(0, -8);
-            ctx.lineTo(0, 8);
-            ctx.stroke();
-            ctx.restore();
-
-            ctx.save();
-            ctx.translate(this.x + this.width - 12, this.y - 5);
-            ctx.rotate(propellerAngle);
-            ctx.beginPath();
-            ctx.moveTo(-8, 0);
-            ctx.lineTo(8, 0);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(0, -8);
-            ctx.lineTo(0, 8);
-            ctx.stroke();
-            ctx.restore();
-
-            ctx.fillStyle = '#666';
-            ctx.beginPath();
-            ctx.moveTo(this.x + this.width / 2, this.y + this.height);
-            ctx.lineTo(this.x + this.width / 2 - 5, this.y + this.height + 8);
-            ctx.lineTo(this.x + this.width / 2 + 5, this.y + this.height + 8);
+            ctx.arc(this.x + 19, this.y + this.height / 2 + bobble - 3, 2, 0, Math.PI * 2);
+            ctx.arc(this.x + this.width - 17, this.y + this.height / 2 + bobble - 3, 2, 0, Math.PI * 2);
             ctx.fill();
+
+            ctx.strokeStyle = '#7D3C98';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(this.x + this.width / 2, this.y + this.height / 2 + bobble + 4, 5, 0.3, Math.PI - 0.3);
+            ctx.stroke();
+
+            ctx.strokeStyle = '#FFD700';
+            ctx.lineWidth = 3;
+
+            ctx.save();
+            ctx.translate(this.x + 12, this.y - 5 + bobble);
+            ctx.rotate(propellerAngle);
+            ctx.beginPath();
+            ctx.moveTo(-10, 0);
+            ctx.lineTo(10, 0);
+            ctx.stroke();
+            ctx.restore();
+
+            ctx.save();
+            ctx.translate(this.x + this.width - 12, this.y - 5 + bobble);
+            ctx.rotate(propellerAngle);
+            ctx.beginPath();
+            ctx.moveTo(-10, 0);
+            ctx.lineTo(10, 0);
+            ctx.stroke();
+            ctx.restore();
+
+            ctx.strokeStyle = '#555';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(this.x + 12, this.y + bobble);
+            ctx.lineTo(this.x + 12, this.y - 5 + bobble);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(this.x + this.width - 12, this.y + bobble);
+            ctx.lineTo(this.x + this.width - 12, this.y - 5 + bobble);
+            ctx.stroke();
         }
     }
 
@@ -441,6 +658,12 @@ function spawnObstacle(currentTime) {
         const type = Math.random() < 0.5 ? 'wall' : 'drone';
         obstacles.push(new Obstacle(type));
         lastObstacleTime = currentTime;
+
+        if (Math.random() < CONFIG.apple.spawnChance) {
+            setTimeout(() => {
+                apples.push(new Apple());
+            }, 500 + Math.random() * 1000);
+        }
     }
 }
 
@@ -451,13 +674,42 @@ function updateSpeed(currentTime) {
 }
 
 function updateScore(currentTime) {
-    score = Math.floor(currentTime / 100);
+    score = Math.floor(currentTime / 100) + bonusScore;
     scoreDisplay.textContent = `Score: ${score}`;
 }
 
 function drawGround() {
-    ctx.fillStyle = '#8B7355';
+    ctx.fillStyle = '#98D8C8';
     ctx.fillRect(0, CONFIG.canvas.groundLevel, CONFIG.canvas.width, CONFIG.canvas.height - CONFIG.canvas.groundLevel);
+
+    ctx.fillStyle = '#7BC8A4';
+    for (let i = 0; i < CONFIG.canvas.width; i += 20) {
+        const offset = Math.sin((i + animationFrame) * 0.05) * 3;
+        ctx.beginPath();
+        ctx.moveTo(i, CONFIG.canvas.groundLevel);
+        ctx.lineTo(i + 5, CONFIG.canvas.groundLevel - 5 + offset);
+        ctx.lineTo(i + 10, CONFIG.canvas.groundLevel);
+        ctx.fill();
+    }
+
+    ctx.fillStyle = '#FFD700';
+    for (let i = 0; i < 10; i++) {
+        const x = (i * 80 + animationFrame * 0.2) % CONFIG.canvas.width;
+        const y = CONFIG.canvas.groundLevel + 20 + Math.sin(i) * 10;
+        ctx.beginPath();
+        for (let j = 0; j < 5; j++) {
+            const angle = (Math.PI * 2 * j) / 5 - Math.PI / 2;
+            const px = x + Math.cos(angle) * 3;
+            const py = y + Math.sin(angle) * 3;
+            if (j === 0) {
+                ctx.moveTo(px, py);
+            } else {
+                ctx.lineTo(px, py);
+            }
+        }
+        ctx.closePath();
+        ctx.fill();
+    }
 }
 
 function update() {
@@ -493,6 +745,36 @@ function update() {
             obstacles.splice(i, 1);
         }
     }
+
+    for (let i = apples.length - 1; i >= 0; i--) {
+        apples[i].update();
+
+        if (checkCollision(player, apples[i])) {
+            bonusScore += CONFIG.apple.points;
+            floatingTexts.push(new FloatingText(apples[i].x, apples[i].y, '+100'));
+            for (let j = 0; j < 15; j++) {
+                particles.push(new Particle(apples[i].x + apples[i].width / 2, apples[i].y));
+            }
+            playCollectSound();
+            apples.splice(i, 1);
+        } else if (apples[i].isOffScreen()) {
+            apples.splice(i, 1);
+        }
+    }
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+        particles[i].update();
+        if (particles[i].isDead()) {
+            particles.splice(i, 1);
+        }
+    }
+
+    for (let i = floatingTexts.length - 1; i >= 0; i--) {
+        floatingTexts[i].update();
+        if (floatingTexts[i].isDead()) {
+            floatingTexts.splice(i, 1);
+        }
+    }
 }
 
 function draw() {
@@ -502,9 +784,15 @@ function draw() {
 
     drawGround();
 
+    apples.forEach(apple => apple.draw());
+
     player.draw();
 
     obstacles.forEach(obstacle => obstacle.draw());
+
+    particles.forEach(particle => particle.draw());
+
+    floatingTexts.forEach(text => text.draw());
 }
 
 function gameLoop() {
@@ -516,10 +804,14 @@ function gameLoop() {
 function startGame() {
     gameState = 'playing';
     score = 0;
+    bonusScore = 0;
     gameStartTime = Date.now();
     lastObstacleTime = 0;
     currentSpeed = CONFIG.obstacle.speed;
     obstacles = [];
+    apples = [];
+    particles = [];
+    floatingTexts = [];
     animationFrame = 0;
     player.reset();
 

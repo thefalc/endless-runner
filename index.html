@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Endless Runner</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="game-container">
+        <div id="score-display">Score: 0</div>
+
+        <canvas id="gameCanvas" width="800" height="400"></canvas>
+
+        <div id="start-screen" class="overlay">
+            <h1>Endless Runner</h1>
+            <p>Press UP arrow to jump over walls</p>
+            <p>Press DOWN arrow to duck under drones</p>
+            <button id="start-button">Start Game</button>
+        </div>
+
+        <div id="game-over-screen" class="overlay hidden">
+            <h1>Game Over!</h1>
+            <p id="final-score">Score: 0</p>
+            <button id="restart-button">Play Again</button>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>

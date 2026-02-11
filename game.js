@@ -39,7 +39,23 @@ const CONFIG = {
         gravity: 0.6,
         jumpVelocity: -12,
         speedIncreaseInterval: 10000,
-        speedIncreaseAmount: 0.5
+        speedIncreaseAmount: 0.5,
+        maxLives: 3
+    },
+    powerup: {
+        star: {
+            width: 30,
+            height: 30,
+            duration: 5000,
+            spawnChance: 0.15
+        },
+        magnet: {
+            width: 30,
+            height: 30,
+            duration: 8000,
+            range: 100,
+            spawnChance: 0.15
+        }
     }
 };
 
@@ -55,16 +71,26 @@ const restartButton = document.getElementById('restart-button');
 let gameState = 'start';
 let score = 0;
 let bonusScore = 0;
+let lives = CONFIG.game.maxLives;
 let gameStartTime = 0;
 let lastObstacleTime = 0;
 let currentSpeed = CONFIG.obstacle.speed;
 let obstacles = [];
 let apples = [];
+let powerups = [];
 let floatingTexts = [];
 let keys = {};
 let clouds = [];
 let animationFrame = 0;
 let particles = [];
+let invincible = false;
+let invincibleEndTime = 0;
+let magnetActive = false;
+let magnetEndTime = 0;
+let playerEmotion = 'happy';
+let emotionEndTime = 0;
+let applesCollected = 0;
+let lastEncouragementTime = 0;
 
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 let backgroundMusic = null;
@@ -130,6 +156,70 @@ function playCollectSound() {
     oscillator2.start(audioContext.currentTime);
     oscillator1.stop(audioContext.currentTime + 0.15);
     oscillator2.stop(audioContext.currentTime + 0.15);
+}
+
+function playEatingSound() {
+    const noise = audioContext.createBufferSource();
+    const buffer = audioContext.createBuffer(1, audioContext.sampleRate * 0.15, audioContext.sampleRate);
+    const data = buffer.getChannelData(0);
+
+    for (let i = 0; i < buffer.length; i++) {
+        data[i] = Math.random() * 2 - 1;
+    }
+
+    noise.buffer = buffer;
+
+    const filter = audioContext.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(2000, audioContext.currentTime);
+
+    const gainNode = audioContext.createGain();
+    gainNode.gain.setValueAtTime(0.15, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
+
+    noise.connect(filter);
+    filter.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    noise.start(audioContext.currentTime);
+    noise.stop(audioContext.currentTime + 0.15);
+}
+
+function playPowerUpSound() {
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    oscillator.type = 'square';
+    oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(800, audioContext.currentTime + 0.1);
+    oscillator.frequency.exponentialRampToValueAtTime(1200, audioContext.currentTime + 0.2);
+
+    gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.3);
+}
+
+function playHurtSound() {
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    oscillator.type = 'sawtooth';
+    oscillator.frequency.setValueAtTime(200, audioContext.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(50, audioContext.currentTime + 0.3);
+
+    gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.3);
 }
 
 function playGameOverSound() {
@@ -314,10 +404,11 @@ class Particle {
 }
 
 class FloatingText {
-    constructor(x, y, text) {
+    constructor(x, y, text, color = '#FFD700') {
         this.x = x;
         this.y = y;
         this.text = text;
+        this.color = color;
         this.life = 1.0;
         this.vy = -1.5;
     }
@@ -330,8 +421,8 @@ class FloatingText {
     draw() {
         ctx.save();
         ctx.globalAlpha = this.life;
-        ctx.font = 'bold 24px Arial';
-        ctx.fillStyle = '#FFD700';
+        ctx.font = 'bold 24px Comic Sans MS';
+        ctx.fillStyle = this.color;
         ctx.strokeStyle = '#FF4500';
         ctx.lineWidth = 3;
         ctx.strokeText(this.text, this.x, this.y);
@@ -341,6 +432,88 @@ class FloatingText {
 
     isDead() {
         return this.life <= 0;
+    }
+}
+
+class PowerUp {
+    constructor(type) {
+        this.type = type;
+        if (type === 'star') {
+            this.width = CONFIG.powerup.star.width;
+            this.height = CONFIG.powerup.star.height;
+        } else {
+            this.width = CONFIG.powerup.magnet.width;
+            this.height = CONFIG.powerup.magnet.height;
+        }
+        this.x = CONFIG.canvas.width;
+        this.y = CONFIG.apple.yPositions[Math.floor(Math.random() * CONFIG.apple.yPositions.length)];
+        this.rotation = 0;
+    }
+
+    update() {
+        this.x -= currentSpeed;
+        this.rotation += 0.1;
+    }
+
+    draw() {
+        ctx.save();
+        ctx.translate(this.x + this.width / 2, this.y);
+        ctx.rotate(this.rotation);
+
+        if (this.type === 'star') {
+            ctx.fillStyle = '#FFD700';
+            ctx.strokeStyle = '#FFA500';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let i = 0; i < 5; i++) {
+                const angle = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+                const outerRadius = this.width / 2;
+                const innerRadius = this.width / 4;
+
+                const x1 = Math.cos(angle) * outerRadius;
+                const y1 = Math.sin(angle) * outerRadius;
+                const x2 = Math.cos(angle + Math.PI / 5) * innerRadius;
+                const y2 = Math.sin(angle + Math.PI / 5) * innerRadius;
+
+                if (i === 0) ctx.moveTo(x1, y1);
+                else ctx.lineTo(x1, y1);
+                ctx.lineTo(x2, y2);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+        } else {
+            ctx.fillStyle = '#DC143C';
+            ctx.strokeStyle = '#8B0000';
+            ctx.lineWidth = 2;
+
+            ctx.fillRect(-this.width / 2, -2, this.width, 4);
+            ctx.strokeRect(-this.width / 2, -2, this.width, 4);
+
+            ctx.fillRect(-2, -this.height / 2, 4, this.height);
+            ctx.strokeRect(-2, -this.height / 2, 4, this.height);
+
+            ctx.fillStyle = '#C0C0C0';
+            ctx.beginPath();
+            ctx.arc(-this.width / 3, -this.height / 3, 6, 0, Math.PI * 2);
+            ctx.arc(this.width / 3, -this.height / 3, 6, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        ctx.restore();
+    }
+
+    getBounds() {
+        return {
+            left: this.x,
+            right: this.x + this.width,
+            top: this.y - this.height / 2,
+            bottom: this.y + this.height / 2
+        };
+    }
+
+    isOffScreen() {
+        return this.x + this.width < 0;
     }
 }
 
@@ -395,6 +568,13 @@ const player = {
         const legOffset = Math.sin(animationFrame * 0.2) * 3;
         const blinkPhase = animationFrame % 120;
 
+        if (invincible) {
+            const rainbowColors = ['#FF0000', '#FF7F00', '#FFFF00', '#00FF00', '#0000FF', '#4B0082', '#9400D3'];
+            const colorIndex = Math.floor(animationFrame / 5) % rainbowColors.length;
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = rainbowColors[colorIndex];
+        }
+
         if (this.isDucking) {
             ctx.fillStyle = CONFIG.player.color;
             ctx.beginPath();
@@ -407,8 +587,9 @@ const player = {
                 ctx.fillRect(this.x + 10, this.y + 12, 8, 2);
                 ctx.fillRect(this.x + 22, this.y + 12, 8, 2);
             } else {
-                ctx.arc(this.x + 14, this.y + 12, 4, 0, Math.PI * 2);
-                ctx.arc(this.x + 26, this.y + 12, 4, 0, Math.PI * 2);
+                const eyeSize = playerEmotion === 'scared' ? 6 : 4;
+                ctx.arc(this.x + 14, this.y + 12, eyeSize, 0, Math.PI * 2);
+                ctx.arc(this.x + 26, this.y + 12, eyeSize, 0, Math.PI * 2);
                 ctx.fill();
 
                 ctx.fillStyle = '#333';
@@ -440,14 +621,16 @@ const player = {
                 ctx.fillRect(this.x + 12, this.y + 12, 6, 2);
                 ctx.fillRect(this.x + 22, this.y + 12, 6, 2);
             } else {
-                ctx.arc(this.x + 15, this.y + 12, 5, 0, Math.PI * 2);
-                ctx.arc(this.x + 25, this.y + 12, 5, 0, Math.PI * 2);
+                const eyeSize = playerEmotion === 'scared' ? 6 : 5;
+                ctx.arc(this.x + 15, this.y + 12, eyeSize, 0, Math.PI * 2);
+                ctx.arc(this.x + 25, this.y + 12, eyeSize, 0, Math.PI * 2);
                 ctx.fill();
 
                 ctx.fillStyle = '#333';
+                const pupilSize = playerEmotion === 'scared' ? 4 : 3;
                 ctx.beginPath();
-                ctx.arc(this.x + 16, this.y + 12, 3, 0, Math.PI * 2);
-                ctx.arc(this.x + 26, this.y + 12, 3, 0, Math.PI * 2);
+                ctx.arc(this.x + 16, this.y + 12, pupilSize, 0, Math.PI * 2);
+                ctx.arc(this.x + 26, this.y + 12, pupilSize, 0, Math.PI * 2);
                 ctx.fill();
 
                 ctx.fillStyle = 'white';
@@ -466,7 +649,14 @@ const player = {
             ctx.strokeStyle = '#FF1493';
             ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.arc(this.x + 20, this.y + 20, 6, 0.2, Math.PI - 0.2);
+            if (playerEmotion === 'happy') {
+                ctx.arc(this.x + 20, this.y + 20, 6, 0.2, Math.PI - 0.2);
+            } else if (playerEmotion === 'scared') {
+                ctx.arc(this.x + 20, this.y + 23, 5, Math.PI + 0.2, Math.PI * 2 - 0.2);
+            } else {
+                ctx.moveTo(this.x + 14, this.y + 22);
+                ctx.lineTo(this.x + 26, this.y + 22);
+            }
             ctx.stroke();
 
             ctx.fillStyle = '#FFD700';
@@ -482,6 +672,14 @@ const player = {
             ctx.arc(this.x + 20, this.y - 2, 3, 0, Math.PI * 2);
             ctx.fill();
 
+            if (!this.isJumping && applesCollected > 0 && applesCollected % 10 === 0 && animationFrame % 20 < 10) {
+                const danceOffset = Math.sin(animationFrame * 0.5) * 5;
+                ctx.save();
+                ctx.translate(this.x + this.width / 2, this.y + 35);
+                ctx.rotate(danceOffset * 0.1);
+                ctx.translate(-(this.x + this.width / 2), -(this.y + 35));
+            }
+
             if (!this.isJumping) {
                 ctx.fillStyle = '#FFB6C1';
                 ctx.beginPath();
@@ -493,7 +691,13 @@ const player = {
                 ctx.fillRect(this.x + 11, this.y + 48, 5, 8 + legOffset);
                 ctx.fillRect(this.x + 24, this.y + 48, 5, 8 - legOffset);
             }
+
+            if (applesCollected > 0 && applesCollected % 10 === 0 && animationFrame % 20 < 10) {
+                ctx.restore();
+            }
         }
+
+        ctx.shadowBlur = 0;
     },
 
     getBounds() {
@@ -664,7 +868,33 @@ function spawnObstacle(currentTime) {
                 apples.push(new Apple());
             }, 500 + Math.random() * 1000);
         }
+
+        if (Math.random() < CONFIG.powerup.star.spawnChance) {
+            setTimeout(() => {
+                powerups.push(new PowerUp('star'));
+            }, 800 + Math.random() * 1200);
+        } else if (Math.random() < CONFIG.powerup.magnet.spawnChance) {
+            setTimeout(() => {
+                powerups.push(new PowerUp('magnet'));
+            }, 800 + Math.random() * 1200);
+        }
     }
+}
+
+function showEncouragingMessage() {
+    const messages = [
+        "Great job!",
+        "Awesome!",
+        "You're doing amazing!",
+        "Super star!",
+        "Fantastic!",
+        "Keep it up!",
+        "Wow!",
+        "Incredible!",
+        "You're the best!"
+    ];
+    const message = messages[Math.floor(Math.random() * messages.length)];
+    floatingTexts.push(new FloatingText(CONFIG.canvas.width / 2 - 50, 100, message, '#FF69B4'));
 }
 
 function updateSpeed(currentTime) {
@@ -721,6 +951,23 @@ function update() {
     updateSpeed(currentTime);
     updateScore(currentTime);
 
+    if (invincible && Date.now() > invincibleEndTime) {
+        invincible = false;
+    }
+
+    if (magnetActive && Date.now() > magnetEndTime) {
+        magnetActive = false;
+    }
+
+    if (Date.now() > emotionEndTime) {
+        playerEmotion = 'happy';
+    }
+
+    if (currentTime - lastEncouragementTime > 15000 && Math.random() < 0.3) {
+        showEncouragingMessage();
+        lastEncouragementTime = currentTime;
+    }
+
     player.update();
 
     if (keys['ArrowDown']) {
@@ -733,12 +980,38 @@ function update() {
 
     spawnObstacle(currentTime);
 
+    let closestObstacle = null;
+    let closestDistance = Infinity;
+
     for (let i = obstacles.length - 1; i >= 0; i--) {
         obstacles[i].update();
 
+        const distance = obstacles[i].x - (player.x + player.width);
+        if (distance > 0 && distance < closestDistance) {
+            closestDistance = distance;
+            closestObstacle = obstacles[i];
+        }
+
         if (checkCollision(player, obstacles[i])) {
-            gameOver();
-            return;
+            if (!invincible) {
+                lives--;
+                playHurtSound();
+                playerEmotion = 'scared';
+                emotionEndTime = Date.now() + 1000;
+
+                for (let j = 0; j < 20; j++) {
+                    particles.push(new Particle(player.x + player.width / 2, player.y + player.height / 2));
+                }
+
+                if (lives <= 0) {
+                    gameOver();
+                    return;
+                } else {
+                    floatingTexts.push(new FloatingText(player.x, player.y - 20, `${lives} ❤️ left`, '#FF1493'));
+                    invincible = true;
+                    invincibleEndTime = Date.now() + 1500;
+                }
+            }
         }
 
         if (obstacles[i].isOffScreen()) {
@@ -746,19 +1019,68 @@ function update() {
         }
     }
 
+    if (closestObstacle && closestDistance < 30 && !invincible) {
+        if (playerEmotion !== 'scared') {
+            playerEmotion = 'scared';
+            emotionEndTime = Date.now() + 500;
+        }
+    }
+
     for (let i = apples.length - 1; i >= 0; i--) {
         apples[i].update();
 
+        const distanceToApple = Math.hypot(
+            (apples[i].x + apples[i].width / 2) - (player.x + player.width / 2),
+            apples[i].y - (player.y + player.height / 2)
+        );
+
+        if (magnetActive && distanceToApple < CONFIG.powerup.magnet.range) {
+            const dx = (player.x + player.width / 2) - (apples[i].x + apples[i].width / 2);
+            const dy = (player.y + player.height / 2) - apples[i].y;
+            apples[i].x += dx * 0.15;
+            apples[i].y += dy * 0.15;
+        }
+
         if (checkCollision(player, apples[i])) {
             bonusScore += CONFIG.apple.points;
-            floatingTexts.push(new FloatingText(apples[i].x, apples[i].y, '+100'));
+            applesCollected++;
+            floatingTexts.push(new FloatingText(apples[i].x, apples[i].y, '+100', '#FFD700'));
             for (let j = 0; j < 15; j++) {
                 particles.push(new Particle(apples[i].x + apples[i].width / 2, apples[i].y));
             }
-            playCollectSound();
+            playEatingSound();
+            playerEmotion = 'happy';
+            emotionEndTime = Date.now() + 1000;
             apples.splice(i, 1);
+
+            if (applesCollected % 10 === 0) {
+                floatingTexts.push(new FloatingText(player.x, player.y - 40, '🎉 AMAZING! 🎉', '#FF69B4'));
+            }
         } else if (apples[i].isOffScreen()) {
             apples.splice(i, 1);
+        }
+    }
+
+    for (let i = powerups.length - 1; i >= 0; i--) {
+        powerups[i].update();
+
+        if (checkCollision(player, powerups[i])) {
+            if (powerups[i].type === 'star') {
+                invincible = true;
+                invincibleEndTime = Date.now() + CONFIG.powerup.star.duration;
+                floatingTexts.push(new FloatingText(powerups[i].x, powerups[i].y, '⭐ INVINCIBLE!', '#FFD700'));
+            } else if (powerups[i].type === 'magnet') {
+                magnetActive = true;
+                magnetEndTime = Date.now() + CONFIG.powerup.magnet.duration;
+                floatingTexts.push(new FloatingText(powerups[i].x, powerups[i].y, '🧲 MAGNET!', '#DC143C'));
+            }
+            playPowerUpSound();
+            for (let j = 0; j < 20; j++) {
+                particles.push(new Particle(powerups[i].x + powerups[i].width / 2, powerups[i].y));
+            }
+            powerups.splice(i, 1);
+        } else if (powerups[i].isOffScreen()) {
+            powerups.splice(i, 1);
         }
     }
 
@@ -786,6 +1108,8 @@ function draw() {
 
     apples.forEach(apple => apple.draw());
 
+    powerups.forEach(powerup => powerup.draw());
+
     player.draw();
 
     obstacles.forEach(obstacle => obstacle.draw());
@@ -793,6 +1117,36 @@ function draw() {
     particles.forEach(particle => particle.draw());
 
     floatingTexts.forEach(text => text.draw());
+
+    for (let i = 0; i < CONFIG.game.maxLives; i++) {
+        ctx.fillStyle = i < lives ? '#FF1493' : '#555';
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(20 + i * 35, 30);
+        ctx.bezierCurveTo(20 + i * 35, 25, 15 + i * 35, 20, 10 + i * 35, 20);
+        ctx.bezierCurveTo(0 + i * 35, 20, 0 + i * 35, 30, 0 + i * 35, 30);
+        ctx.bezierCurveTo(0 + i * 35, 40, 10 + i * 35, 50, 20 + i * 35, 55);
+        ctx.bezierCurveTo(30 + i * 35, 50, 40 + i * 35, 40, 40 + i * 35, 30);
+        ctx.bezierCurveTo(40 + i * 35, 30, 40 + i * 35, 20, 30 + i * 35, 20);
+        ctx.bezierCurveTo(25 + i * 35, 20, 20 + i * 35, 25, 20 + i * 35, 30);
+        ctx.fill();
+        ctx.stroke();
+    }
+
+    if (invincible) {
+        const timeLeft = Math.ceil((invincibleEndTime - Date.now()) / 1000);
+        ctx.font = 'bold 16px Comic Sans MS';
+        ctx.fillStyle = '#FFD700';
+        ctx.fillText(`⭐ ${timeLeft}s`, 20, 80);
+    }
+
+    if (magnetActive) {
+        const timeLeft = Math.ceil((magnetEndTime - Date.now()) / 1000);
+        ctx.font = 'bold 16px Comic Sans MS';
+        ctx.fillStyle = '#DC143C';
+        ctx.fillText(`🧲 ${timeLeft}s`, 20, invincible ? 100 : 80);
+    }
 }
 
 function gameLoop() {
@@ -805,14 +1159,21 @@ function startGame() {
     gameState = 'playing';
     score = 0;
     bonusScore = 0;
+    lives = CONFIG.game.maxLives;
     gameStartTime = Date.now();
     lastObstacleTime = 0;
+    lastEncouragementTime = 0;
     currentSpeed = CONFIG.obstacle.speed;
     obstacles = [];
     apples = [];
+    powerups = [];
     particles = [];
     floatingTexts = [];
     animationFrame = 0;
+    invincible = false;
+    magnetActive = false;
+    playerEmotion = 'happy';
+    applesCollected = 0;
     player.reset();
 
     clouds = [];

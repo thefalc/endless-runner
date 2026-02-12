@@ -1,8 +1,8 @@
 const CONFIG = {
     canvas: {
-        width: 800,
-        height: 400,
-        groundLevel: 280
+        width: window.innerWidth,
+        height: window.innerHeight,
+        groundLevel: window.innerHeight * 0.7
     },
     player: {
         width: 40,
@@ -17,7 +17,12 @@ const CONFIG = {
         height: 25,
         points: 100,
         spawnChance: 0.3,
-        yPositions: [220, 180, 250]
+        // Y positions as percentages of canvas height (0.55, 0.45, 0.625 of original 400px)
+        getYPositions: () => [
+            window.innerHeight * 0.55,
+            window.innerHeight * 0.45,
+            window.innerHeight * 0.625
+        ]
     },
     obstacle: {
         wall: {
@@ -29,18 +34,19 @@ const CONFIG = {
             width: 50,
             height: 30,
             color: '#666666',
-            y: 200
+            // Drone Y as percentage of canvas height - positioned closer to ground
+            getY: () => window.innerHeight * 0.6
         },
-        speed: 5,
+        speed: 3,
         minGap: 1500,
         maxGap: 3000
     },
     game: {
-        gravity: 0.6,
-        jumpVelocity: -12,
+        gravity: 0.5,
+        jumpVelocity: -15,
         speedIncreaseInterval: 10000,
-        speedIncreaseAmount: 0.5,
-        maxLives: 3
+        speedIncreaseAmount: 0.3,
+        maxLives: 10
     },
     powerup: {
         star: {
@@ -67,6 +73,26 @@ const gameOverScreen = document.getElementById('game-over-screen');
 const finalScoreDisplay = document.getElementById('final-score');
 const startButton = document.getElementById('start-button');
 const restartButton = document.getElementById('restart-button');
+
+// Set initial canvas size
+canvas.width = CONFIG.canvas.width;
+canvas.height = CONFIG.canvas.height;
+
+// Handle window resize
+function resizeCanvas() {
+    CONFIG.canvas.width = window.innerWidth;
+    CONFIG.canvas.height = window.innerHeight;
+    CONFIG.canvas.groundLevel = window.innerHeight * 0.7;
+    canvas.width = CONFIG.canvas.width;
+    canvas.height = CONFIG.canvas.height;
+
+    // Update player position if game is running
+    if (gameState === 'playing' && player) {
+        player.y = CONFIG.canvas.groundLevel - player.height;
+    }
+}
+
+window.addEventListener('resize', resizeCanvas);
 
 let gameState = 'start';
 let score = 0;
@@ -294,7 +320,7 @@ function stopBackgroundMusic() {
 class Cloud {
     constructor() {
         this.x = CONFIG.canvas.width + Math.random() * 200;
-        this.y = 50 + Math.random() * 100;
+        this.y = window.innerHeight * 0.125 + Math.random() * window.innerHeight * 0.25;
         this.width = 60 + Math.random() * 40;
         this.height = 30 + Math.random() * 20;
         this.speed = 0.5 + Math.random() * 0.5;
@@ -304,7 +330,7 @@ class Cloud {
         this.x -= this.speed;
         if (this.x + this.width < 0) {
             this.x = CONFIG.canvas.width;
-            this.y = 50 + Math.random() * 100;
+            this.y = window.innerHeight * 0.125 + Math.random() * window.innerHeight * 0.25;
         }
     }
 
@@ -323,7 +349,8 @@ class Apple {
         this.width = CONFIG.apple.width;
         this.height = CONFIG.apple.height;
         this.x = CONFIG.canvas.width;
-        this.y = CONFIG.apple.yPositions[Math.floor(Math.random() * CONFIG.apple.yPositions.length)];
+        const yPositions = CONFIG.apple.getYPositions();
+        this.y = yPositions[Math.floor(Math.random() * yPositions.length)];
         this.bounce = 0;
     }
 
@@ -446,7 +473,8 @@ class PowerUp {
             this.height = CONFIG.powerup.magnet.height;
         }
         this.x = CONFIG.canvas.width;
-        this.y = CONFIG.apple.yPositions[Math.floor(Math.random() * CONFIG.apple.yPositions.length)];
+        const yPositions = CONFIG.apple.getYPositions();
+        this.y = yPositions[Math.floor(Math.random() * yPositions.length)];
         this.rotation = 0;
     }
 
@@ -733,7 +761,7 @@ class Obstacle {
             this.width = CONFIG.obstacle.drone.width;
             this.height = CONFIG.obstacle.drone.height;
             this.color = CONFIG.obstacle.drone.color;
-            this.y = CONFIG.obstacle.drone.y;
+            this.y = CONFIG.obstacle.drone.getY();
         }
 
         this.x = CONFIG.canvas.width;
@@ -894,7 +922,7 @@ function showEncouragingMessage() {
         "You're the best!"
     ];
     const message = messages[Math.floor(Math.random() * messages.length)];
-    floatingTexts.push(new FloatingText(CONFIG.canvas.width / 2 - 50, 100, message, '#FF69B4'));
+    floatingTexts.push(new FloatingText(CONFIG.canvas.width / 2 - 50, window.innerHeight * 0.25, message, '#FF69B4'));
 }
 
 function updateSpeed(currentTime) {
@@ -913,7 +941,8 @@ function drawGround() {
     ctx.fillRect(0, CONFIG.canvas.groundLevel, CONFIG.canvas.width, CONFIG.canvas.height - CONFIG.canvas.groundLevel);
 
     ctx.fillStyle = '#7BC8A4';
-    for (let i = 0; i < CONFIG.canvas.width; i += 20) {
+    const grassSpacing = Math.max(20, CONFIG.canvas.width / 40);
+    for (let i = 0; i < CONFIG.canvas.width; i += grassSpacing) {
         const offset = Math.sin((i + animationFrame) * 0.05) * 3;
         ctx.beginPath();
         ctx.moveTo(i, CONFIG.canvas.groundLevel);
@@ -923,9 +952,11 @@ function drawGround() {
     }
 
     ctx.fillStyle = '#FFD700';
-    for (let i = 0; i < 10; i++) {
+    const numFlowers = Math.floor(CONFIG.canvas.width / 80);
+    for (let i = 0; i < numFlowers; i++) {
         const x = (i * 80 + animationFrame * 0.2) % CONFIG.canvas.width;
-        const y = CONFIG.canvas.groundLevel + 20 + Math.sin(i) * 10;
+        const groundOffset = (CONFIG.canvas.height - CONFIG.canvas.groundLevel) * 0.2;
+        const y = CONFIG.canvas.groundLevel + groundOffset + Math.sin(i) * 10;
         ctx.beginPath();
         for (let j = 0; j < 5; j++) {
             const angle = (Math.PI * 2 * j) / 5 - Math.PI / 2;
